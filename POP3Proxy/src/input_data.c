@@ -9,7 +9,7 @@
 #include <limits.h>
 #include <errno.h>
 
-#include "parameters.h"
+#include "input_data.h"
 #include "media_types.h"
 
 input_data params;
@@ -227,7 +227,7 @@ void resolve_address(char *address, uint16_t port, struct addrinfo ** addrinfo) 
 //         return -1;
 //     fclose(f);
 //     return 1;
-}
+// }
 
 // #define MEDIA_BLOCK_SIZE 20
 
