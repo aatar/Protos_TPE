@@ -180,8 +180,8 @@ long resolve_port(char * port_name, char *optarg) {
     char *endptr    = 0;
     const long port = strtol(optarg, &endptr, 10);
 
-    if (endptr == optarg || *endptr != '\0' || ((LONG_MIN == port || LONG_MAX == port) && ERANGE == errno)
-        || port < 0 || port > USHRT_MAX) {
+    if (endptr == optarg || *endptr != '\0' || port < 0 || port > USHRT_MAX ||
+     ((LONG_MIN == port || LONG_MAX == port) && ERANGE == errno) ) {
         fprintf(stderr, "%s port should be an integer: %s\n", port_name, optarg);
         exit(1);
     }

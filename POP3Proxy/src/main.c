@@ -15,7 +15,7 @@
 
 #include "input_data.h"
 #include "selector.h"
-// #include "pop3.h"
+#include "pop3.h"
 // #include "management.h"
 // #include "metrics.h"
 
@@ -101,8 +101,7 @@ int main (int argc, char ** argv) {
     }
 
     const struct fd_handler pop3_handler = {
-            // .handle_read       = &pop3_passive_accept,
-            .handle_read       = NULL,
+            .handle_read       = &pop3_passive_accept,
             .handle_write      = NULL,
             .handle_close      = NULL, // nada que liberar
     };
@@ -157,7 +156,7 @@ finally:
     }
     selector_close();
 
-    // pop3_pool_destroy();
+    pop3_pool_destroy();
 
     if(passive_tcp_socket >= 0) {
         close(passive_tcp_socket);
