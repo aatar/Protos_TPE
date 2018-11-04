@@ -44,6 +44,7 @@ selector_error(const selector_status status) {
         default:
             msg = ERROR_DEFAULT_MSG;
     }
+    
     return msg;
 }
 

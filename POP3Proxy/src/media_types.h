@@ -4,30 +4,22 @@
 #include <unistd.h>
 #include <stdbool.h>
 
-typedef struct subtype_node{
-    struct subtype_node  * next;
-    char              * subtype;
-}subtype_node;
+void
+create_media_types_list();
 
-typedef struct media_node{
-    char              * type;
-    struct media_node * next;
-    subtype_node      * first;
-    subtype_node      * end;
-    bool                wildcard;
-}media_node;
+bool
+check_media_type(struct media_types * mt, char * type, char * subtype);
 
-struct media_types{
-    size_t       size;
-    media_node * first;
-    media_node * end;
-};
+int
+add_media_type(char *type, char *subtype);
 
-struct media_types * new_media_types();
-int check_media_type(struct media_types * mt, char * type, char * subtype);
-int add_media_type(struct media_types * mt, char * type, char * subtype);
-char * get_types_list(struct media_types * mt, char separator);
-int is_mime(char * str, char ** type, char ** subtype);
-int delete_media_type(struct media_types * mt, char * type, char * subtype);
+char * 
+get_types_list(char separator);
+
+bool 
+is_mime(char *str, char **type, char **subtype);
+
+bool 
+delete_media_type(char * type, char * subtype);
 
 #endif

@@ -21,10 +21,10 @@
 
 
 int create_passive_socket(struct addrinfo *address, int proto) {
-    int passive_socket;
     int sock_opt = true;
+    int passive_socket = socket(address->ai_family, SOCK_STREAM, proto);
 
-    if ((passive_socket = socket(address->ai_family, SOCK_STREAM, proto)) == 0) {
+    if (passive_socket == -1) {
         perror("unable to create socket");
         exit(EXIT_FAILURE);
     }
@@ -53,7 +53,8 @@ int main (int argc, char ** argv) {
 
     // metricas = calloc(1, sizeof(*metricas));
 
-    int passive_tcp_socket = create_passive_socket(params->listenadddrinfo, IPPROTO_TCP);
+    int passive_tcp_socket = create_passive_socket(params->listenadddrinfo, 
+        IPPROTO_TCP);
 
     if (listen(passive_tcp_socket, 20) < 0) {
         perror("listen");
@@ -62,14 +63,16 @@ int main (int argc, char ** argv) {
 
     printf("Listening on TCP %s:%d \n", params->listen_address, params->port);
 
-    int passive_sctp_socket = create_passive_socket(params->managementaddrinfo, IPPROTO_SCTP);
+    int passive_sctp_socket = create_passive_socket(params->managementaddrinfo, 
+        IPPROTO_SCTP);
 
     if (listen(passive_sctp_socket, 20) < 0) {
         perror("listen");
         exit(EXIT_FAILURE);
     }
 
-    printf("Listening on SCTP %s:%d \n", params->management_address, params->management_port);
+    printf("Listening on SCTP %s:%d \n", params->management_address, 
+        params->management_port);
 
     //accept the incoming connection
     puts("Waiting for connections ...");
@@ -89,13 +92,14 @@ int main (int argc, char ** argv) {
                     .tv_nsec = 0,
             },
     };
-    if(0 != selector_init(&conf)) {
+
+    if (0 != selector_init(&conf)) {
         err_msg = "initializing selector";
         goto finally;
     }
 
     selector = selector_new(1024);
-    if(selector == NULL) {
+    if (selector == NULL) {
         err_msg = "unable to create selector";
         goto finally;
     }
@@ -120,7 +124,7 @@ int main (int argc, char ** argv) {
     selector_status ss_psmp = selector_register(selector, passive_sctp_socket,
                                                 &psmp_handler, OP_READ, NULL);
 
-    if(ss_pop3 != SELECTOR_SUCCESS || ss_psmp != SELECTOR_SUCCESS) {
+    if (ss_pop3 != SELECTOR_SUCCESS || ss_psmp != SELECTOR_SUCCESS) {
         err_msg = "registering fd";
         goto finally;
     }
@@ -128,20 +132,19 @@ int main (int argc, char ** argv) {
     for(;;) {
         err_msg  = NULL;
         ss  = selector_select(selector);
-        if(ss != SELECTOR_SUCCESS) {
+        if (ss != SELECTOR_SUCCESS) {
             err_msg = "serving";
             break;
         }
     }
 
-    if(err_msg == NULL) {
+    if(err_msg == NULL)
         err_msg = "closing";
-    }
 
     int ret = 0;
 
 finally:
-    if(ss!= SELECTOR_SUCCESS) {
+    if (ss!= SELECTOR_SUCCESS) {
         fprintf(stderr, "%s: %s\n", (err_msg == NULL) ? "": err_msg,
                 ss_pop3 == SELECTOR_IO
                 ? strerror(errno)
@@ -151,16 +154,18 @@ finally:
         perror(err_msg);
         ret = 1;
     }
-    if(selector!= NULL) {
+
+    if (selector!= NULL) {
         selector_destroy(selector);
     }
+
     selector_close();
 
     pop3_pool_destroy();
 
-    if(passive_tcp_socket >= 0) {
+    if (passive_tcp_socket >= 0) {
         close(passive_tcp_socket);
     }
-    return ret;
 
+    return ret;
 }
