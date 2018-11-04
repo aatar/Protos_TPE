@@ -563,6 +563,11 @@ int main(int argc, char const *argv[]) {
     }
 
     free(auxString);
+    free(filter_medias_copy);
+    free(auxStringBoundary);
+    free(boundary);
+    for(int i = 0; i < boundaries_length; i++)
+        free(boundaries[i]);
     return 0;
 }
 
