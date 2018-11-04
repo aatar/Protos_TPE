@@ -49,7 +49,7 @@ int create_passive_socket(struct addrinfo *address, int proto) {
 
 int main (int argc, char ** argv) {
 
-    // resolve_args(argc,argv);
+    resolve_args(argc,argv);
 
     // metricas = calloc(1, sizeof(*metricas));
 
@@ -162,5 +162,4 @@ finally:
         close(passive_tcp_socket);
     }
     return ret;
-
 }

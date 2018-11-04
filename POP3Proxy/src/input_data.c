@@ -59,7 +59,7 @@ void resolve_args(int argc, char **argv) {
     params                      = malloc(sizeof(*params));
     params->listen_address      = "0.0.0.0";
     params->port                = 1110;
-    params->replacement_msg     = "Parte reemplazada.";
+    params->replacement_msg     = "Replaced message.";
     // params->filtered_media_types = new_media_types();
     params->origin_port         = 110;
     params->filter_command      = NULL;
@@ -163,6 +163,7 @@ void resolve_args(int argc, char **argv) {
     index = optind;
 
     if (argc-index == 1) {
+        // printf("DIR %s", argv[index]);
         params->origin_server = argv[index];
     }else {
         fprintf(stderr, "Usage: %s [ POSIX style options ] <origin-server>\n",
