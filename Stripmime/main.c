@@ -4,115 +4,20 @@
 #include <ctype.h>
 
 #include "main.h"
+#include "boundary.h"
 #include "contentType.h"
 
 #define FILTER_MEDIAS 	"FILTER_MEDIAS"
 #define FILTER_MSG 		"FILTER_MSG"
-#define MAX_BOUNDARIES_LENGTH = 1024;
+#define MAX_LENGTH 1024
 
-//Delete later
-#define HEADER_0 0
-
-#define HEADER_DOT_0 1
-#define HEADER_DOT_1 2
-
-#define HEADER_1 3
-#define HEADER_1_1 4
-#define HEADER_1_2 5
-#define HEADER_1_3 6
-#define HEADER_1_4 7
-#define HEADER_1_LWSP 8
-#define HEADER_1_PARENTHESIS 9
-
-#define HEADER_2 10
-
-#define HEADER_3 11
-#define HEADER_3_1 12
-#define HEADER_3_2 13
-#define HEADER_3_3 14
-#define HEADER_3_4 15
-#define HEADER_3_5 16
-#define HEADER_3_6 17
-#define HEADER_3_7 18
-
-
-#define HEADER_4 19
-#define HEADER_4_1 20
-#define HEADER_4_2 21
-#define HEADER_4_3 22
-
-#define HEADER_5 23
-
-#define HEADER_6 24
-
-#define HEADER_7 25
-
-#define HEADER_NOT_COPY_0 26
-#define HEADER_NOT_COPY_1 27
-#define HEADER_NOT_COPY_2 28
-#define HEADER_NOT_COPY_3 29
-
-//Body
-#define BODY_0 30
-
-#define BODY_DOT_0 31
-#define BODY_DOT_1 32
-
-#define BODY_COPY_0 33
-#define BODY_COPY_1 34
-#define BODY_COPY_2 35
-#define BODY_COPY_3 36
-#define BODY_COPY_4 37
-#define BODY_COPY_5 38
-#define BODY_COPY_6 39
-
-#define BODY_NOT_COPY_0 40
-#define BODY_NOT_COPY_1 41
-#define BODY_NOT_COPY_2 42
-#define BODY_NOT_COPY_3 43
-#define BODY_NOT_COPY_4 44
-#define BODY_NOT_COPY_5 45
-#define BODY_NOT_COPY_6 46
-
-#define FINISHED 47
-
-#define ERROR 48
-
-// Content-type
-#define O_CONTENTTYPE 49
-#define N1_CONTENTTYPE 50
-#define T1_CONTENTTYPE 51
-#define E1_CONTENTTYPE 52
-#define N2_CONTENTTYPE 53
-#define T2_CONTENTTYPE 54
-#define UNDERSCORE_CONTENTTYPE 55
-#define T3_CONTENTTYPE 56
-#define Y_CONTENTTYPE 57
-#define P_CONTENTTYPE 58
-#define E2_CONTENTTYPE 59
-#define FINISHED_CONTENT_TYPE 60
-/////////////////////////
-
-// Boundary
-#define O_BOUNDARY 61
-#define U_BOUNDARY 62
-#define N_BOUNDARY 63
-#define D_BOUNDARY 64
-#define A_BOUNDARY 65
-#define R_BOUNDARY 66
-#define Y_BOUNDARY 67
-#define FINISHED_BOUNDARY 68
-
-// Status
-#define COPY 69
-#define NOT_COPY 70
-//////////////////////////////
 
 char* stringAppendChar (char *str, char c);
 int isContentType();
 int isBoundary();
 int matchMime(char *filter_medias);
 int matchBoundary();
+int compareToOneMimeType(char * mime_type, char * filter_medias, int start_position);
 
 char c, last_char;
 int status = COPY;
@@ -121,19 +26,21 @@ int get_next = 1;
 char *auxString;
 char *auxStringBoundary;
 char *boundary;
-char *boundaries[MAX_BOUNDARIES_LENGTH];
+char *boundaries[MAX_LENGTH];
 int boundaries_length = 0;
 
 int main(int argc, char const *argv[]) {
 
-    char *filter_medias = getenv(FILTER_MEDIAS);
+    //char *filter_medias = getenv(FILTER_MEDIAS);
+    char *filter_medias = "application/*,image/jpeg";
 
     if (filter_medias == NULL) {
         fprintf(stderr, "-ERR No filter medias specified.\r\n");
         return -1;
     }
 
-    char *filter_msg = getenv(FILTER_MSG);
+    //char *filter_msg = getenv(FILTER_MSG);
+    char *filter_msg = "This part was replaced";
 
     if (filter_msg == NULL) {
         filter_msg = "This part of the email was replaced because of the MIME Type.";
@@ -281,8 +188,7 @@ int main(int argc, char const *argv[]) {
                 }
             break;
             case HEADER_3:
-                auxString = stringAppendChar(auxString, c);
-                if(matchMime(filter_medias)) { //deberia pasar tambien c, pero como es global puede leer su valor
+                if(matchMime(filter_medias)) {
                     free(auxString);
                     auxString = malloc(1);
                     auxString[0] = 0;
@@ -520,8 +426,11 @@ int main(int argc, char const *argv[]) {
                 else state = ERROR;
             break;
             case BODY_COPY_5:
-                putchar(c);
-                if(c == '\r') state = BODY_COPY_6;
+                if(c == '\r') {
+                    putchar(c);
+                    state = BODY_COPY_6;
+                }
+                else state = FINISHED;
             break;
             case BODY_COPY_6:
                 putchar(c);
@@ -581,6 +490,7 @@ int main(int argc, char const *argv[]) {
             break;
             case BODY_NOT_COPY_5:
                 if(c == '\r') state = BODY_NOT_COPY_6;
+                else state = FINISHED;
             break;
             case BODY_NOT_COPY_6:
                 if(c == '\n') {
@@ -596,7 +506,7 @@ int main(int argc, char const *argv[]) {
         }
     }
 
-    ree(auxString);
+    free(auxString);
     free(filter_medias_copy);
     free(auxStringBoundary);
     free(boundary);
@@ -730,4 +640,46 @@ int matchBoundary() {
     }
     last_char = c;
     return last_boundary[index] == 0;
+}
+
+int matchMime(char * filter_medias)
+{
+    char *mime_type = malloc(1);
+    mime_type[0] = 0;
+    while (c != ';') {
+        mime_type = stringAppendChar(mime_type, c);
+        c = getchar();
+        auxString = stringAppendChar(auxString, c);
+    }
+    
+    int i = 0;
+    while(filter_medias[i]){
+        if(compareToOneMimeType(mime_type, filter_medias, i)) return 1;
+        else{
+            while(filter_medias[i] != ',' && filter_medias[i] != 0) i++;
+            if (filter_medias[i] == ',') i++;
+        }
+    }
+    free(mime_type);
+    return 0;
+}
+
+int compareToOneMimeType(char * mime_type, char * filter_medias, int start_position)
+{
+    int index = 0;
+    while(mime_type[index] != '/' && filter_medias[start_position + index] != '/'
+        && filter_medias[start_position + index] != 0){
+        if(mime_type[index] != filter_medias[start_position + index]) return 0;
+        index++;
+    }
+    if(mime_type[index] != filter_medias[start_position + index]) return 0;
+    index++;
+    if(filter_medias[start_position + index] == '*') return 1;
+    while(mime_type[index] != 0 && filter_medias[start_position + index] != 0
+        && filter_medias[start_position + index] != ','){
+        if(mime_type[index] != filter_medias[start_position + index]) return 0;
+        index++;
+    }
+    return ((mime_type[index] == 0 && filter_medias[index + start_position] == ',')
+            || mime_type[index] == filter_medias[index + start_position]);
 }
