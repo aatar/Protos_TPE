@@ -16,6 +16,7 @@
 #include "buffer.h"
 #include "stm.h"
 #include "pop3.h"
+#include "pop3_parser.h"
 #include "input_data.h"
 #include "selector.h"
 
@@ -135,6 +136,18 @@ struct hello_st {
 };
 
 
+/** usado por REQUEST */
+struct request_st {
+    /** buffer utilizado para I/O */
+    buffer                     *rb, *wb;
+
+    /** parser */
+    struct pop3_request         *request;
+    struct request_parser       request_parser;
+    struct response_parser      response_parser;
+
+};
+
 
 struct pop3_data {
 
@@ -164,13 +177,13 @@ struct pop3_data {
     struct state_machine          stm;
 
     /** estados para el client_fd */
-    // union {
-    //     struct request_st         request;
-    // } client;
+    union {
+        struct request_st         request;
+    } client;
     /** estados para el origin_fd */
     union {
         struct hello_st           hello;
-        // struct response_st        response;
+        struct request_st         request;
     } orig;
 
     /** buffers para ser usados read_buffer, write_buffer.*/
@@ -553,7 +566,7 @@ unsigned connecting(struct selector_key *key) {
 static void hello_init(const unsigned state, struct selector_key *key) {
     struct hello_st *d = &ATTACHMENT(key)->orig.hello;
 
-    // d->rb                              = &(ATTACHMENT(key)->read_buffer);
+    d->rb                              = &(ATTACHMENT(key)->read_buffer);
     d->wb                              = &(ATTACHMENT(key)->write_buffer);
 }
 
@@ -565,19 +578,18 @@ static unsigned hello_read(struct selector_key *key) {
     uint8_t *ptr;
     size_t  count;
     ssize_t  n;
+    size_t len;
 
-    // //Mensaje de bienvenida
-    // ptr = buffer_write_ptr(d->wb, &count);
-    // const char * msg = "+OK Proxy server POP3 ready.\r\n";
-    // n = strlen(msg);
-    // strcpy((char *) ptr, msg);
-    // buffer_write_adv(d->wb, n);
+    ptr = buffer_write_ptr(d->wb, &count);
+    const char * messsage = "+OK Proxy server POP3.\r\n";
+    len = strlen(messsage);
+    strcpy((char *) ptr, messsage);
+    buffer_write_adv(d->wb, len);
 
     ptr = buffer_write_ptr(d->wb, &count);
     n = recv(key->fd, ptr, count, 0);
 
     if(n > 0) {
-        // buffer_write_adv(d->wb, 0);
 
         selector_status ss = SELECTOR_SUCCESS;
         ss |= selector_set_interest_key(key, OP_NOOP);
@@ -630,6 +642,58 @@ static unsigned hello_write(struct selector_key *key) {
 // }
 
 
+////////////////////////////////////////////////////////////////////////////////
+// CAPA
+////////////////////////////////////////////////////////////////////////////////
+
+void
+capa_init(const unsigned state, struct selector_key *key) {
+    struct request_st * d      = &ATTACHMENT(key)->orig.request;
+
+    d->rb                       = &ATTACHMENT(key)->read_buffer;
+    d->wb                       = &ATTACHMENT(key)->write_buffer;
+
+    struct pop3_request *r      = new_request(get_cmd("capa"), NULL);
+
+    d->request                  = r;
+    d->response_parser.request  = d->request;
+    response_parser_init(&d->response_parser);
+
+}
+
+/** Lee la respuesta al comando capa */
+static unsigned capa_read(struct selector_key *key) {
+    struct request_st *d = &ATTACHMENT(key)->orig.request;
+    enum pop3_state ret  = REQUEST_CAPA;
+    bool  error        = false;
+
+    buffer  *b         = d->rb;
+    uint8_t *ptr;
+    size_t  count;
+    ssize_t  n;
+
+    ptr = buffer_write_ptr(d->rb, &count);
+    n = recv(key->fd, ptr, count, 0);
+
+    if(n > 0) {
+        buffer_write_adv(d->rb, n);
+        enum response_state st = response_consume(b, d->wb, &d->response_parser, &error);
+        if (response_is_done(st, 0)) {
+
+            // set_pipelining(key, d);
+
+            selector_status ss = SELECTOR_SUCCESS;
+            ss |= selector_set_interest_key(key, OP_NOOP);
+            ss |= selector_set_interest(key->s, ATTACHMENT(key)->client_fd, OP_READ);
+            ret = SELECTOR_SUCCESS == ss ? REQUEST : ERROR;
+        }
+    } else {
+        ret = ERROR;
+    }
+
+    return ret;
+}
+
 
 // handlers para cada estado 
 static const struct state_definition client_statbl[] = {
@@ -647,6 +711,10 @@ static const struct state_definition client_statbl[] = {
                 .on_read_ready    = hello_read,
                 .on_write_ready   = hello_write,
                 // .on_departure     = hello_close,
+        }, {
+                .state            = REQUEST_CAPA,
+                .on_arrival       = capa_init,
+                .on_read_ready    = capa_read,
         }
         // , {
 };
