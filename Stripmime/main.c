@@ -4,6 +4,7 @@
 #include <ctype.h>
 
 #include "main.h"
+#include "contentType.h"
 
 #define FILTER_MEDIAS 	"FILTER_MEDIAS"
 #define FILTER_MSG 		"FILTER_MSG"
@@ -12,75 +13,99 @@
 //Delete later
 #define HEADER_0 0
 
-#define HEADER_DOT_0 0
-#define HEADER_DOT_1 0
+#define HEADER_DOT_0 1
+#define HEADER_DOT_1 2
 
-#define HEADER_1 1
-#define HEADER_1_1 1
-#define HEADER_1_2 1
-#define HEADER_1_3 1
-#define HEADER_1_4 1
-#define HEADER_1_LWSP 1
-#define HEADER_1_PARENTHESIS 1
+#define HEADER_1 3
+#define HEADER_1_1 4
+#define HEADER_1_2 5
+#define HEADER_1_3 6
+#define HEADER_1_4 7
+#define HEADER_1_LWSP 8
+#define HEADER_1_PARENTHESIS 9
 
-#define HEADER_2 1
+#define HEADER_2 10
 
-#define HEADER_3 1
-#define HEADER_3_1 1
-#define HEADER_3_2 1
-#define HEADER_3_3 1
-#define HEADER_3_4 1
-#define HEADER_3_5 1
-#define HEADER_3_6 1
-#define HEADER_3_7 1
+#define HEADER_3 11
+#define HEADER_3_1 12
+#define HEADER_3_2 13
+#define HEADER_3_3 14
+#define HEADER_3_4 15
+#define HEADER_3_5 16
+#define HEADER_3_6 17
+#define HEADER_3_7 18
 
 
-#define HEADER_4 1
-#define HEADER_4_1 1
-#define HEADER_4_2 1
-#define HEADER_4_3 1
+#define HEADER_4 19
+#define HEADER_4_1 20
+#define HEADER_4_2 21
+#define HEADER_4_3 22
 
-#define HEADER_5 1
+#define HEADER_5 23
 
-#define HEADER_6 1
+#define HEADER_6 24
 
-#define HEADER_7 1
+#define HEADER_7 25
 
-#define HEADER_NOT_COPY_0 0
-#define HEADER_NOT_COPY_1 0
-#define HEADER_NOT_COPY_2 0
-#define HEADER_NOT_COPY_3 0
+#define HEADER_NOT_COPY_0 26
+#define HEADER_NOT_COPY_1 27
+#define HEADER_NOT_COPY_2 28
+#define HEADER_NOT_COPY_3 29
 
 //Body
-#define BODY_0 0
+#define BODY_0 30
 
-#define BODY_DOT_0 0
-#define BODY_DOT_1 0
+#define BODY_DOT_0 31
+#define BODY_DOT_1 32
 
-#define BODY_COPY_0 0
-#define BODY_COPY_1 0
-#define BODY_COPY_2 0
-#define BODY_COPY_3 0
-#define BODY_COPY_4 0
-#define BODY_COPY_5 0
-#define BODY_COPY_6 0
+#define BODY_COPY_0 33
+#define BODY_COPY_1 34
+#define BODY_COPY_2 35
+#define BODY_COPY_3 36
+#define BODY_COPY_4 37
+#define BODY_COPY_5 38
+#define BODY_COPY_6 39
 
-#define BODY_NOT_COPY_0 0
-#define BODY_NOT_COPY_1 0
-#define BODY_NOT_COPY_2 0
-#define BODY_NOT_COPY_3 0
-#define BODY_NOT_COPY_4 0
-#define BODY_NOT_COPY_5 0
-#define BODY_NOT_COPY_6 0
+#define BODY_NOT_COPY_0 40
+#define BODY_NOT_COPY_1 41
+#define BODY_NOT_COPY_2 42
+#define BODY_NOT_COPY_3 43
+#define BODY_NOT_COPY_4 44
+#define BODY_NOT_COPY_5 45
+#define BODY_NOT_COPY_6 46
 
-#define FINISHED 0
+#define FINISHED 47
 
-#define ERROR 0
+#define ERROR 48
 
+// Content-type
+#define O_CONTENTTYPE 49
+#define N1_CONTENTTYPE 50
+#define T1_CONTENTTYPE 51
+#define E1_CONTENTTYPE 52
+#define N2_CONTENTTYPE 53
+#define T2_CONTENTTYPE 54
+#define UNDERSCORE_CONTENTTYPE 55
+#define T3_CONTENTTYPE 56
+#define Y_CONTENTTYPE 57
+#define P_CONTENTTYPE 58
+#define E2_CONTENTTYPE 59
+#define FINISHED_CONTENT_TYPE 60
+/////////////////////////
+
+// Boundary
+#define O_BOUNDARY 61
+#define U_BOUNDARY 62
+#define N_BOUNDARY 63
+#define D_BOUNDARY 64
+#define A_BOUNDARY 65
+#define R_BOUNDARY 66
+#define Y_BOUNDARY 67
+#define FINISHED_BOUNDARY 68
 
 // Status
-#define COPY 0
-#define NOT_COPY 0
+#define COPY 69
+#define NOT_COPY 70
 //////////////////////////////
 
 char* stringAppendChar (char *str, char c);
@@ -160,14 +185,17 @@ int main(int argc, char const *argv[]) {
                 }
             break;
             case HEADER_DOT_1:
-                if(c == '\n') state = FINISHED;
+                if(c == '\n'){
+                    printf(".\r\n");
+                    state = FINISHED;
+                }
                 else {
                     putchar('\r');
                     putchar(c);
                     state = HEADER_0;
                 }
             break;
-            case HEADER_1: //ahora la c deberia valer O u o para que tenga chances de ser content-type
+            case HEADER_1:
                 auxString = stringAppendChar(auxString, c);
                 if((c == 'o'|| c == 'O') && isContentType()) state = HEADER_2;
                 else {
@@ -252,12 +280,13 @@ int main(int argc, char const *argv[]) {
                     state = HEADER_3;
                 }
             break;
-            case HEADER_3: //en c esta guardado el primer caracter del content type
+            case HEADER_3:
                 auxString = stringAppendChar(auxString, c);
                 if(matchMime(filter_medias)) { //deberia pasar tambien c, pero como es global puede leer su valor
                     free(auxString);
                     auxString = malloc(1);
                     auxString[0] = 0;
+                    status = NOT_COPY;
                     state = HEADER_4;
                 }
                 else {
@@ -352,7 +381,6 @@ int main(int argc, char const *argv[]) {
             break;
             case HEADER_4_1:
                 if(c == '\n') {
-                    status = NOT_COPY;
                     state = HEADER_4_2;
                 }
                 else {
@@ -446,7 +474,10 @@ int main(int argc, char const *argv[]) {
                 }
             break;
             case BODY_DOT_1:
-                if(c == '\n') state = FINISHED;
+                if(c == '\n'){
+                    printf(".\r\n");
+                    state = FINISHED;
+                }
                 else {
                     putchar('\r');
                     putchar(c);
@@ -559,15 +590,24 @@ int main(int argc, char const *argv[]) {
                 }
                 else state = BODY_NOT_COPY_5;
             break;
+            default:
+                // Do nothing
+            break;
         }
     }
 
-    free(auxString);
+    ree(auxString);
     free(filter_medias_copy);
     free(auxStringBoundary);
     free(boundary);
     for(int i = 0; i < boundaries_length; i++)
         free(boundaries[i]);
+
+    if(state == ERROR) {
+        fprintf(stderr, "-ERR The email has one or more errors.\r\n");
+        return -1;
+    }
+
     return 0;
 }
 
@@ -579,4 +619,115 @@ char* stringAppendChar (char *str, char c) {
     ret[len + 1] = '\0';
     free(str);
     return ret;
+}
+
+int isContentType() {
+    int contentTypeState = O_CONTENTTYPE;
+    while (contentTypeState != FINISHED_CONTENT_TYPE) {
+        c = getchar();
+        auxString = stringAppendChar(auxString, c);
+        switch(contentTypeState) {
+            case O_CONTENTTYPE:
+                if(toupper(c) == 'N') contentTypeState = N1_CONTENTTYPE;
+                else return 0;
+            break;
+            case N1_CONTENTTYPE:
+                if(toupper(c) == 'T') contentTypeState = T1_CONTENTTYPE;
+                else return 0;
+            break;
+            case T1_CONTENTTYPE:
+                if(toupper(c) == 'E') contentTypeState = E1_CONTENTTYPE;
+                else return 0;
+            break;
+            case E1_CONTENTTYPE:
+                if(toupper(c) == 'N') contentTypeState = N2_CONTENTTYPE;
+                else return 0;
+            break;
+            case N2_CONTENTTYPE:
+                if(toupper(c) == 'T') contentTypeState = T2_CONTENTTYPE;
+                else return 0;
+            break;
+            case T2_CONTENTTYPE:
+                if(c == '-') contentTypeState = UNDERSCORE_CONTENTTYPE;
+                else return 0;
+            break;
+            case UNDERSCORE_CONTENTTYPE:
+                if(toupper(c) == 'T') contentTypeState = T3_CONTENTTYPE;
+                else return 0;
+            break;
+            case T3_CONTENTTYPE:
+                if(toupper(c) == 'Y') contentTypeState = Y_CONTENTTYPE;
+                else return 0;
+            break;
+            case Y_CONTENTTYPE:
+                if(toupper(c) == 'P') contentTypeState = P_CONTENTTYPE;
+                else return 0;
+            break;
+            case P_CONTENTTYPE:
+                if(toupper(c) == 'E') contentTypeState = E2_CONTENTTYPE;
+                else return 0;
+            break;
+            case E2_CONTENTTYPE:
+                if(c == ':') contentTypeState = FINISHED_CONTENT_TYPE;
+                else return 0;
+            break;
+        }
+    }
+    return 1;
+}
+
+int isBoundary() {
+    int boundaryState = O_BOUNDARY;
+    while (boundaryState != FINISHED_BOUNDARY) {
+        c = getchar();
+        if(status == COPY) auxString = stringAppendChar(auxString, c);
+        switch(boundaryState) {
+            case O_BOUNDARY:
+                if(toupper(c) == 'U') boundaryState = U_BOUNDARY;
+                else return 0;
+            break;
+            case U_BOUNDARY:
+                if(toupper(c) == 'N') boundaryState = N_BOUNDARY;
+                else return 0;
+            break;
+            case N_BOUNDARY:
+                if(toupper(c) == 'D') boundaryState = D_BOUNDARY;
+                else return 0;
+            break;
+            case D_BOUNDARY:
+                if(toupper(c) == 'A') boundaryState = A_BOUNDARY;
+                else return 0;
+            break;
+            case A_BOUNDARY:
+                if(toupper(c) == 'R') boundaryState = R_BOUNDARY;
+                else return 0;
+            break;
+            case R_BOUNDARY:
+                if(toupper(c) == 'Y') boundaryState = Y_BOUNDARY;
+                else return 0;
+            break;
+            case Y_BOUNDARY:
+                if(toupper(c) == '=') boundaryState = FINISHED_BOUNDARY;
+                else return 0;
+            break;
+        }
+    }
+    return 1;
+}
+
+int matchBoundary() {
+    if(boundaries_length == 0)
+        return 0;
+    char *last_boundary = boundaries[boundaries_length - 1];
+    int index = 0;
+    
+    while(c != '\r' && c != '-') {
+        if(status == COPY) putchar(c);
+        else auxStringBoundary = stringAppendChar(auxStringBoundary, c);
+
+        if(c != last_boundary[index++]) return 0;
+        c = getchar();
+    }
+    last_char = c;
+    return last_boundary[index] == 0;
 }
