@@ -23,7 +23,7 @@ char c, last_char;
 int status = COPY;
 int state = HEADER_0;
 int get_next = 1;
-int not_copy_boundary = 0;
+int last_match_had_boundary = 0;
 char *auxString;
 char *auxStringBoundary;
 char *boundary;
@@ -33,7 +33,7 @@ int boundaries_length = 0;
 int main(int argc, char const *argv[]) {
 
     //char *filter_medias = getenv(FILTER_MEDIAS);
-    char *filter_medias = "multipart/alternative,image/jpeg";
+    char *filter_medias = "application/*,image/png";
 
     if (filter_medias == NULL) {
         fprintf(stderr, "-ERR No filter medias specified.\r\n");
@@ -328,7 +328,7 @@ int main(int argc, char const *argv[]) {
             break;
             case HEADER_7:
                 if(c == '\"') {
-                    not_copy_boundary = 1;
+                    last_match_had_boundary = 1;
                     char *boundary_aux = malloc(strlen(boundary) + 1);
                     strcpy(boundary_aux, boundary);
                     boundary_aux[strlen(boundary)] = 0;
@@ -443,12 +443,6 @@ int main(int argc, char const *argv[]) {
             break;
             case BODY_NOT_COPY_0:
                 if(c == '-') {
-                    /*if(!not_copy_boundary) {
-                        free(auxString);
-                        auxString = malloc(1);
-                        auxString[0] = 0;
-                        auxString = stringAppendChar(auxString, c);
-                    }*/
                     free(auxStringBoundary);
                     auxStringBoundary = malloc(2);
                     auxStringBoundary[0] = '-';
@@ -479,14 +473,22 @@ int main(int argc, char const *argv[]) {
             break;
             case BODY_NOT_COPY_3:
                 if(c == '\n') {
-                    auxStringBoundary = stringAppendChar(auxStringBoundary, c);
-                    printf("Content-Type: text/plain; charset=\"UTF-8\"\r\n\r\n%s\r\n\r\n", filter_msg);
-                    status = COPY;
-                    printf( "%s", auxStringBoundary );
-                    free(auxStringBoundary);
-                    auxStringBoundary = malloc(1);
-                    auxStringBoundary[0] = 0;
-                    state = HEADER_0;
+                    if(!last_match_had_boundary) {
+                        auxStringBoundary = stringAppendChar(auxStringBoundary, c);
+                        printf("Content-Type: text/plain; charset=\"UTF-8\"\r\n\r\n%s\r\n\r\n", filter_msg);
+                        status = COPY;
+                        printf( "%s", auxStringBoundary );
+                        free(auxStringBoundary);
+                        auxStringBoundary = malloc(1);
+                        auxStringBoundary[0] = 0;
+                        state = HEADER_0;
+                    }
+                    else {
+                        free(auxStringBoundary);
+                        auxStringBoundary = malloc(1);
+                        auxStringBoundary[0] = 0;
+                        state = BODY_NOT_COPY_0;
+                    }
                 }
                 else state = ERROR;
             break;
@@ -498,7 +500,7 @@ int main(int argc, char const *argv[]) {
                     printf("Content-Type: text/plain; charset=\"UTF-8\"\r\n\r\n%s\r\n\r\n", filter_msg);
 
                     auxStringBoundary = stringAppendChar(auxStringBoundary, c);
-                    if(!not_copy_boundary) printf( "%s", auxStringBoundary );
+                    if(!last_match_had_boundary) printf( "%s", auxStringBoundary );
                     free(auxStringBoundary);
                     auxStringBoundary = malloc(1);
                     auxStringBoundary[0] = 0;
@@ -510,7 +512,7 @@ int main(int argc, char const *argv[]) {
                 else state = ERROR;
             break;
             case BODY_NOT_COPY_5:
-                not_copy_boundary = 0;
+                last_match_had_boundary = 0;
                 if(c == '\r'){
                     putchar(c);
                     state = BODY_NOT_COPY_6;
