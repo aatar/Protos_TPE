@@ -9,7 +9,7 @@ typedef struct input_data {
     char * listen_address;
     uint16_t port;
     char * replacement_msg;
-    // struct media_types * filtered_media_types;
+    struct media_types * filtered_media_types;
     char * origin_server;
     uint16_t origin_port;
     char * filter_command;
@@ -17,7 +17,7 @@ typedef struct input_data {
     struct addrinfo * listenadddrinfo;
     char * management_address;
     uint16_t management_port;
-    // bool et_activated;
+    bool external_transf_activated;
     struct addrinfo * managementaddrinfo;
     char * user;
     char * pass;

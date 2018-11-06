@@ -25,6 +25,8 @@
 
 #define BUFFER_SIZE 2048
 
+#define MAX_INVALID_CMDS 3
+
 // estados de pop3 
 enum pop3_state {
     /**
@@ -115,7 +117,7 @@ struct pop3_session {
     char *password;
 
     enum pop3_session_state state;
-    unsigned concurrent_invalid_commands;
+    unsigned invalid_cmds;
 
     bool pipelining;
 
@@ -142,10 +144,18 @@ struct request_st {
     buffer                     *rb, *wb;
 
     /** parser */
-    struct pop3_request         *request;
+    struct pop3_request         request;
     struct request_parser       request_parser;
     struct response_parser      response_parser;
 
+};
+
+/** usado por RESPONSE */
+struct response_st {
+    buffer                      *rb, *wb;
+
+    struct pop3_request         *request;
+    struct response_parser      response_parser;
 };
 
 
@@ -183,7 +193,7 @@ struct pop3_data {
     /** estados para el origin_fd */
     union {
         struct hello_st           hello;
-        struct request_st         request;
+        struct request_st         response;
     } orig;
 
     /** buffers para ser usados read_buffer, write_buffer.*/
@@ -240,8 +250,6 @@ static struct pop3_data * pop3_init(int client_fd) {
     buffer_init(&pop3->read_buffer,  N(pop3->raw_buff_a), pop3->raw_buff_a);
     buffer_init(&pop3->write_buffer, N(pop3->raw_buff_b), pop3->raw_buff_b);
 
-    // buffer_init(&pop3->super_buffer,  N(pop3->raw_super_buffer), pop3->raw_super_buffer);
-    // buffer_init(&pop3->extern_read_buffer,  N(pop3->raw_extern_read_buffer), pop3->raw_extern_read_buffer);
 
     pop3_session_init(&pop3->session, false);
 
@@ -591,10 +599,10 @@ static unsigned hello_read(struct selector_key *key) {
 
     if(n > 0) {
 
-        selector_status ss = SELECTOR_SUCCESS;
-        ss |= selector_set_interest_key(key, OP_NOOP);
-        ss |= selector_set_interest(key->s, ATTACHMENT(key)->client_fd, OP_WRITE);
-        if (ss != SELECTOR_SUCCESS) {
+        selector_status s = SELECTOR_SUCCESS;
+        s |= selector_set_interest    (key->s, ATTACHMENT(key)->client_fd, OP_WRITE);
+        s |= selector_set_interest_key(key, OP_NOOP);
+        if (s != SELECTOR_SUCCESS) {
             ret = ERROR;
         }
     } else {
@@ -622,10 +630,11 @@ static unsigned hello_write(struct selector_key *key) {
     } else {
         buffer_read_adv(d->wb, n);
         if(!buffer_can_read(d->wb)) {
-            selector_status ss = SELECTOR_SUCCESS;
-            ss |= selector_set_interest_key(key, OP_NOOP);
-            ss |= selector_set_interest(key->s, ATTACHMENT(key)->origin_fd, OP_READ);
-            ret = SELECTOR_SUCCESS == ss ? REQUEST_CAPA : ERROR;
+            selector_status s = SELECTOR_SUCCESS;
+            s |= selector_set_interest    (key->s, ATTACHMENT(key)->origin_fd, OP_READ);
+            s |= selector_set_interest_key(key, OP_NOOP);
+
+            ret = SELECTOR_SUCCESS == s ? REQUEST_CAPA : ERROR;
 
             if (ret == REQUEST_CAPA) {
                 char * msg = "CAPA\r\n";
@@ -651,7 +660,7 @@ hello_close(const unsigned state, struct selector_key *key) {
 ////////////////////////////////////////////////////////////////////////////////
 
 void capa_init(const unsigned state, struct selector_key *key) {
-    struct request_st * d      = &ATTACHMENT(key)->orig.request;
+    struct response_st * d      = &ATTACHMENT(key)->orig.response;
 
 
     d->rb                       = &(ATTACHMENT(key)->read_buffer);
@@ -665,9 +674,9 @@ void capa_init(const unsigned state, struct selector_key *key) {
 
 }
 
-/** Lee la respuesta del comando capa */
+// Lee respuesta del comando capa
 static unsigned capa_read(struct selector_key *key) {
-    struct request_st *d = &ATTACHMENT(key)->orig.request;
+    struct response_st *d = &ATTACHMENT(key)->orig.response;
     enum pop3_state ret  = REQUEST_CAPA;
     bool  error        = false;
 
@@ -686,10 +695,10 @@ static unsigned capa_read(struct selector_key *key) {
 
             // set_pipelining(key, d);
 
-            selector_status ss = SELECTOR_SUCCESS;
-            ss |= selector_set_interest_key(key, OP_NOOP);
-            ss |= selector_set_interest(key->s, ATTACHMENT(key)->client_fd, OP_READ);
-            ret = SELECTOR_SUCCESS == ss ? REQUEST : ERROR;
+            selector_status s = SELECTOR_SUCCESS;
+            s |= selector_set_interest    (key->s, ATTACHMENT(key)->client_fd, OP_READ);
+            s |= selector_set_interest_key(key, OP_NOOP);
+            ret = SELECTOR_SUCCESS == s ? REQUEST : ERROR;
         }
     } else {
         ret = ERROR;
@@ -705,7 +714,7 @@ static unsigned capa_read(struct selector_key *key) {
 
 enum pop3_state request_process(struct selector_key *key, struct request_st * d);
 
-/** inicializacion de variables */
+// inicializacion de variables
 static void request_init(const unsigned state, struct selector_key *key) {
     struct request_st * d = &ATTACHMENT(key)->client.request;
 
@@ -719,7 +728,7 @@ static void request_init(const unsigned state, struct selector_key *key) {
     request_parser_init(&d->request_parser);
 }
 
-/** Lee la request del cliente */
+// Lee el request del mua 
 static unsigned request_read(struct selector_key *key) {
     struct request_st *d = &ATTACHMENT(key)->client.request;
    
@@ -745,138 +754,392 @@ static unsigned request_read(struct selector_key *key) {
     return ret;
 }
 
-#define MAX_CONCURRENT_INVALID_COMMANDS 3
-
 // procesa una request ya parseada
 enum pop3_state request_process(struct selector_key *key, struct request_st * d) {
     enum pop3_state ret = REQUEST;
 
-    if (d->request_parser.state >= request_error) {
-        char * msg = NULL;
+    if (d->request_parser.state >= req_error) {
+        char * message = NULL;
 
         //se manda un mensaje de error al cliente y se vuelve a leer de client_fd
         switch (d->request_parser.state) {
-            case req_error:
-                msg = "-ERR Unknown command.\r\n";
+            case req_error_long_param:
+                message = "-ERR Parameter is too long.\r\n";
                 break;
             case req_error_long_cmd:
-                msg = "-ERR Command is too long.\r\n";
+                message = "-ERR Command is too long.\r\n";
                 break;
-            case req_error_long_param:
-                msg = "-ERR Parameter is too long.\r\n";
+            case req_error:
+                message = "-ERR Unknown command.\r\n";
                 break;
             default:
                 break;
         }
 
-        send(key->fd, msg, strlen(msg), 0);
+        send(key->fd, message, strlen(message), 0);
 
-        ATTACHMENT(key)->session.concurrent_invalid_commands++;
-        int cic = ATTACHMENT(key)->session.concurrent_invalid_commands;
-        if (cic >= MAX_CONCURRENT_INVALID_COMMANDS) {
-            msg = "-ERR Too many invalid commands. (POPG)\n";
-            send(key->fd, msg, strlen(msg), 0);
-            return DONE;
+        ATTACHMENT(key)->session.invalid_cmds++;
+        unsigned int invalid_cmds = ATTACHMENT(key)->session.invalid_cmds;
+        if (invalid_cmds >= MAX_INVALID_CMDS) {
+            message = "-ERR Too many invalid commands.\n";
+            send(key->fd, message, strlen(message), 0);
+            ret = DONE;
+            goto finally;
         }
 
         //reseteamos el parser
         request_parser_init(&d->request_parser);
-        //set_interests(key->s, key->fd, ATTACHMENT(key)->origin_fd, REQUEST);
-        return REQUEST;
+        ret = REQUEST;
+        goto finally;
     }
 
-    ATTACHMENT(key)->session.concurrent_invalid_commands = 0;
+    ATTACHMENT(key)->session.invalid_cmds = 0;
 
-    // si la request es valida la encolamos
-    struct pop3_request *r = new_request(d->request.cmd, d->request.args);
-    if (r == NULL) {
-        fprintf(stderr, "Memory error");
-        return ERROR;
+    struct pop3_request *req = new_request(d->request.cmd, d->request.args);
+    if (req == NULL) {
+        ret = ERROR;
+        goto finally;
     }
 
-    // encolo la request
-    queue_add(ATTACHMENT(key)->session.request_queue, r);
-    // reseteamos el parser
+    queue_add(ATTACHMENT(key)->session.request_queue, req);
     request_parser_init(&d->request_parser);
 
 
-    // no hay mas requests por leer, entonces vamos a request write
     if (!buffer_can_read(d->rb)) {
         selector_status s = SELECTOR_SUCCESS;
+
+        s |= selector_set_interest    (key->s, ATTACHMENT(key)->origin_fd, OP_WRITE);
         s |= selector_set_interest_key(key, OP_NOOP);
-        s |= selector_set_interest(key->s, ATTACHMENT(key)->origin_fd, OP_WRITE);
 
         ret = SELECTOR_SUCCESS == s ? ret : ERROR;
+    }
+
+finally:
+    return ret;
+
+}
+
+
+/** Escrible un request en el server */
+static unsigned request_write(struct selector_key *key) {
+    struct request_st *d = &ATTACHMENT(key)->client.request;
+
+    unsigned  ret      = REQUEST;
+    buffer *b          = d->wb;
+    uint8_t *ptr;
+    size_t  count;
+    ssize_t  n;
+
+    struct pop3_request *req;
+    struct queue *q = ATTACHMENT(key)->session.request_queue;
+
+    //si el server no soporta pipelining se manda la primer request
+    if (ATTACHMENT(key)->session.pipelining == false) {
+        req = queue_peek(q);
+        if (req == NULL) {
+            ret = ERROR;
+            goto finally;
+        }
+        // copio la request en el buffer
+        if (-1 == request_marshall(req, b)) {
+            ret = ERROR;
+        }
+    } else {
+        // si el server soporta pipelining copio el resto de las requests y las mando todas juntas
+        while ((req = queue_get_next(q)) != NULL) {
+            if (-1 == request_marshall(req, b)) {
+                fprintf(stderr, "Buffer error");
+                ret = ERROR;
+                goto finally;
+            }
+        }
+    }
+
+    ptr = buffer_read_ptr(b, &count);
+    n = send(key->fd, ptr, count, MSG_NOSIGNAL);
+
+    if(n < 0) {
+        ret = ERROR;
+    } else {
+        buffer_read_adv(b, n);
+        if(!buffer_can_read(b)) {
+
+            selector_status s = SELECTOR_SUCCESS;
+
+            s = selector_set_interest_key(key, OP_READ);
+
+            ret = SELECTOR_SUCCESS == s ? RESPONSE : ERROR;
+        }
+    }
+
+finally:
+    return ret;
+}
+
+static void
+request_close(const unsigned state, struct selector_key *key) {
+    struct request_st * d = &ATTACHMENT(key)->client.request;
+
+    d->rb              = &(ATTACHMENT(key)->read_buffer);
+    d->wb              = &(ATTACHMENT(key)->write_buffer);
+
+    buffer_reset(d->rb);
+    buffer_reset(d->wb);
+
+    request_parser_close(&d->request_parser);
+}
+
+
+////////////////////////////////////////////////////////////////////////////////
+// RESPONSE
+////////////////////////////////////////////////////////////////////////////////
+
+// enum pop3_state response_process(struct selector_key *key, struct response_st * d);
+
+// void set_request(struct response_st *d, struct pop3_request *request) {
+//     if (request == NULL) {
+//         fprintf(stderr, "Request is NULL");
+//         abort();
+//     }
+//     d->request                  = request;
+//     d->response_parser.request  = request;
+// }
+
+void response_init(const unsigned state, struct selector_key *key) {
+    struct response_st * d = &ATTACHMENT(key)->orig.response;
+
+    d->rb                       = &(ATTACHMENT(key)->read_buffer);
+    d->wb                       = &(ATTACHMENT(key)->write_buffer);
+
+    response_parser_init(&d->response_parser);
+    set_request(d, queue_remove(ATTACHMENT(key)->session.request_queue));
+}
+
+
+
+// Lee la respuesta del origin server. posible paso el estado transformacion externa
+static unsigned response_read(struct selector_key *key) {
+    struct response_st *d = &ATTACHMENT(key)->orig.response;
+
+    buffer  *b         = d->rb;
+    unsigned  ret      = RESPONSE;
+    bool  error        = false;
+    uint8_t *ptr;
+    size_t  count;
+    ssize_t  n;
+
+    ptr = buffer_write_ptr(b, &count);
+    n = recv(key->fd, ptr, count, 0);
+
+    if(n > 0 || buffer_can_read(b)) {
+        buffer_write_adv(b, n);
+        int st = response_consume(d->rb, d->wb, &d->response_parser, &error);
+
+        // se termino de leer la primera linea
+        if (d->response_parser.first_line_done) {
+
+            d->response_parser.first_line_done = false;
+
+            // si el comando era retr pasa a la transformacion externa
+            if (st == response_mail && d->request->cmd->id == retr && d->request->response->status == response_status_ok) {
+                if (params->external_transf_activated && params->filter_command != NULL) {   // revisar input_data
+
+                    selector_status s = SELECTOR_SUCCESS;
+                    s |= selector_set_interest    (key->s, ATTACHMENT(key)->origin_fd, OP_NOOP);
+                    s |= selector_set_interest_key(key, OP_NOOP);
+                    
+
+                    while (buffer_can_read(d->wb)) {
+                        buffer_read(d->wb);
+                    }
+
+                    ret = s == SELECTOR_SUCCESS ? EXTERNAL_TRANSFORMATION : ERROR;
+                    goto finally;
+                }
+            }
+
+            //consumimos el resto de la respuesta
+            st = response_consume(d->rb, d->wb, &d->response_parser, &error);
+        }
+
+        selector_status s = SELECTOR_SUCCESS;
+        s |= selector_set_interest    (key->s, ATTACHMENT(key)->client_fd, OP_WRITE);
+        s |= selector_set_interest_key(key, OP_NOOP);
+        ret = s == SELECTOR_SUCCESS ? RESPONSE : ERROR;
+
+        if (response_is_done(st, 0) && ret == RESPONSE) {
+            if (d->request->cmd->id == capa) {
+                response_process_capa(d);
+            }
+        }
+    } else if (n < 0){
+        ret = ERROR;
+    }
+
+    if (error) {
+        ret = ERROR;
+    }
+
+finally:
+    return ret;
+}
+
+
+/** Escribe respuesta en el mua */
+static unsigned response_write(struct selector_key *key) {
+    struct response_st *d = &ATTACHMENT(key)->orig.response;
+
+    buffer *b = d->wb;
+    enum pop3_state  ret = RESPONSE;
+    uint8_t *ptr;
+    size_t  count;
+    ssize_t  n;
+
+    ptr = buffer_read_ptr(b, &count);
+    n = send(key->fd, ptr, count, MSG_NOSIGNAL);
+
+    if(n < 0) {
+        ret = ERROR;
+    } else {
+        buffer_read_adv(b, n);
+        if (!buffer_can_read(b)) {
+
+            if (d->response_parser.state != response_done) {
+                if (d->request->cmd->id == retr) {
+                        // metricas->transferred_bytes += n;
+                }
+                selector_status s = SELECTOR_SUCCESS;
+                s |= selector_set_interest    (key->s, ATTACHMENT(key)->origin_fd, OP_READ);
+                s |= selector_set_interest_key(key, OP_NOOP);
+                ret = s == SELECTOR_SUCCESS ? RESPONSE : ERROR;
+
+            } else {
+                if (d->request->cmd->id == retr)
+                ret = response_process(key, d);
+                // metricas->retrieved_messages++;
+            }
+        }
     }
 
     return ret;
 }
 
-// /** Escrible la request en el server */
-// static unsigned
-// request_write(struct selector_key *key) {
-//     struct request_st *d = &ATTACHMENT(key)->client.request;
 
-//     unsigned  ret      = REQUEST;
-//     buffer *b          = d->wb;
-//     uint8_t *ptr;
-//     size_t  count;
-//     ssize_t  n;
+// enum pop3_state response_process_capa(struct response_st *d) {
+//     // busco pipelinig
+//     to_upper(d->response_parser.capa_response);
+//     char * capa = d->response_parser.capa_response;
+//     // siempre pasar la needle en upper case
+//     char * needle = "PIPELINING";
 
-//     //struct pop3_request *r = &d->request;
-
-//     // recorro la queue sin desencolar nada
-//     struct queue *q = ATTACHMENT(key)->session.request_queue;
-//     struct pop3_request *r;
-
-//     //si el server no soporta pipelining solo mando la primer request
-//     if (ATTACHMENT(key)->session.pipelining == false) {
-//         r = queue_peek(q);
-//         if (r == NULL) {
-//             fprintf(stderr, "Error empty queue");
-//             return ERROR;
-//         }
-//         // copio la request en el buffer
-//         if (-1 == request_marshall(r, b)) {
-//             ret = ERROR;
-//         }
-//     } else {
-//         // si el server soporta pipelining copio el resto de las requests y las mando todas juntas
-//         while ((r = queue_get_next(q)) != NULL) {
-//             //printf("%s\n", r->cmd->name);
-//             if (-1 == request_marshall(r, b)) {
-//                 fprintf(stderr, "Request buffer error");
-//                 return ERROR;
-//             }
-//         }
+//     if (strstr(capa, needle) != NULL) {
+//         return RESPONSE;
 //     }
 
-//     ptr = buffer_read_ptr(b, &count);
-//     n = send(key->fd, ptr, count, MSG_NOSIGNAL);
+//     // else
+//     size_t capa_length = strlen(capa);
+//     size_t needle_length = strlen(needle);
 
-//     if(n == -1) {
-//         ret = ERROR;
-//     } else {
-//         buffer_read_adv(b, n);
-//         if(!buffer_can_read(b)) {
-//             // el client_fd ya esta en NOOP (seteado en request_read)
-//             if(SELECTOR_SUCCESS == selector_set_interest_key(key, OP_READ)) {
-//                 ret = RESPONSE;
-//             } else {
-//                 ret = ERROR;
-//             }
-//         }
+//     char * eom = "\r\n.\r\n";
+//     size_t eom_length = strlen(eom);
+
+//     char * new_capa = calloc(capa_length - 3 + needle_length + eom_length + 1, sizeof(char));
+//     if (new_capa == NULL) {
+//         return ERROR;
+//     }
+//     // copio to-do menos los ultimos 3 caracteres
+//     memcpy(new_capa, capa, capa_length - 3);
+//     // agrego la needle
+//     memcpy(new_capa + capa_length - 3, needle, needle_length);
+//     // agrego eom
+//     memcpy(new_capa + capa_length - 3 + needle_length, eom, eom_length);
+
+//     //printf("--%s--", new_capa);
+
+//     free(capa);
+
+//     d->response_parser.capa_response = new_capa;
+
+//     //leer el buffer y copiar la nueva respuesta
+//     while (buffer_can_read(d->wb)) {
+//         buffer_read(d->wb);
 //     }
 
-//     return ret;
+//     uint8_t *ptr1;
+//     size_t   count1;
+
+//     ptr1 = buffer_write_ptr(d->wb, &count1);
+//     strcpy((char *)ptr1, new_capa);
+//     buffer_write_adv(d->wb, strlen(new_capa));
+
+//     return RESPONSE;
 // }
 
-// static void
-// request_close(const unsigned state, struct selector_key *key) {
-//     struct request_st * d = &ATTACHMENT(key)->client.request;
-//     request_parser_close(&d->request_parser);
-// }
 
+// // enum pop3_state response_process(struct selector_key *key, struct response_st * d) {
+// //     enum pop3_state ret;
+
+// //     switch (d->request->cmd->id) {
+// //         case quit:
+// //             selector_set_interest_key(key, OP_NOOP);
+// //             ATTACHMENT(key)->session.state = POP3_UPDATE;
+// //             return DONE;
+// //         case user:
+// //             ATTACHMENT(key)->session.user = d->request->args;
+// //             break;
+// //         case pass:
+// //             if (d->request->response->status == response_status_ok)
+// //                 ATTACHMENT(key)->session.state = POP3_TRANSACTION;
+// //             break;
+// //         case capa:
+// //             break;
+// //         default:
+// //             break;
+// //     }
+
+// //     // si quedan mas requests/responses por procesar
+// //     struct queue *q = ATTACHMENT(key)->session.request_queue;
+// //     if (!queue_is_empty(q)) {
+// //         // vuelvo a response_read porque el server soporta pipelining entonces ya le mande to-do y espero respuestas
+// //         if (ATTACHMENT(key)->session.pipelining) {
+// //             set_request(d, queue_remove(q));
+// //             response_parser_init(&d->response_parser);
+
+// //             selector_status ss = SELECTOR_SUCCESS;
+// //             ss |= selector_set_interest_key(key, OP_NOOP);
+// //             ss |= selector_set_interest(key->s, ATTACHMENT(key)->origin_fd, OP_READ);
+// //             ret = ss == SELECTOR_SUCCESS ? RESPONSE : ERROR;
+// //         } else {
+// //             //vuelvo a request write, hay request encoladas que todavia no se mandaron
+// //             selector_status ss = SELECTOR_SUCCESS;
+// //             ss |= selector_set_interest_key(key, OP_NOOP);
+// //             ss |= selector_set_interest(key->s, ATTACHMENT(key)->origin_fd, OP_WRITE);
+// //             ret = ss == SELECTOR_SUCCESS ? REQUEST : ERROR;
+// //         }
+
+// //     } else {
+// //         // voy a request read
+// //         selector_status ss = SELECTOR_SUCCESS;
+// //         ss |= selector_set_interest_key(key, OP_READ);
+// //         ss |= selector_set_interest(key->s, ATTACHMENT(key)->origin_fd, OP_NOOP);
+// //         ret = ss == SELECTOR_SUCCESS ? REQUEST : ERROR;
+// //     }
+
+// //     return ret;
+// // }
+
+static void
+response_close(const unsigned state, struct selector_key *key) {
+    struct response_st * d = &ATTACHMENT(key)->orig.response;
+
+    d->rb              = &(ATTACHMENT(key)->read_buffer);
+    d->wb              = &(ATTACHMENT(key)->write_buffer);
+
+    buffer_reset(d->rb);
+    buffer_reset(d->wb);
+
+    response_parser_close(&d->response_parser);
+}
 
 // handlers para cada estado 
 static const struct state_definition client_statbl[] = {
@@ -893,13 +1156,30 @@ static const struct state_definition client_statbl[] = {
                 .on_arrival       = hello_init,
                 .on_read_ready    = hello_read,
                 .on_write_ready   = hello_write,
-                // .on_departure     = hello_close,
+                .on_departure     = hello_close,
         }, {
                 .state            = REQUEST_CAPA,
                 .on_arrival       = capa_init,
                 .on_read_ready    = capa_read,
+        },{
+
+                .state            = RESPONSE,
+                .on_arrival       = response_init,
+                .on_read_ready    = response_read,
+                .on_write_ready   = response_write,
+                .on_departure     = response_close,
+        },{
+        //         .state            = EXTERNAL_TRANSFORMATION,
+        //         .on_arrival       = external_transformation_init,
+        //         .on_read_ready    = external_transformation_read,
+        //         .on_write_ready   = external_transformation_write,
+        //         .on_departure     = external_transformation_close,
+        // },{
+                .state            = DONE,
+
+        },{
+                .state            = ERROR,
         }
-        // , {
 };
 
 static const struct state_definition * pop3_describe_states(void) {
