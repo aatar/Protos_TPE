@@ -131,7 +131,7 @@ void
 exit_proxy_management();
 
 package *
-handle_package(package *pckg);
+handle_package(package *pckg, struct selector_key *key);
 
 int
 proxy_set_transformation(uint8_t op_code);
@@ -145,6 +145,8 @@ mime_do(uint8_t op_code);
 int
 proxy_change_transf(char *program_path);
 
+int
+close_connection(int socket_fd);
 
 
 
@@ -603,8 +605,189 @@ exit_proxy_management() {
 }
 
 
+/***************************************
+****************************************
+*******   FOR PROXY USE ONLY   *********
+****************************************
+****************************************/
+
+
+typedef enum {
+	ON_HELLO,
+	ON_AUTH,
+	ON_TRANSACTION,
+	ON_EXIT
+} admin_session_state;
+
+struct admin_data {
+
+    // Info about the admin client
+    struct sockaddr_storage       admin_addr;
+    socklen_t                     admin_addr_len;
+    int                           admin_fd;
+
+    admin_session_state          session_state;
+
+    /** buffers para ser usados read_buffer, write_buffer.*/
+    uint8_t raw_buff_a[2048], raw_buff_b[2048];
+    buffer read_buffer, write_buffer;
+    package *temp_pckg;
+
+    /** siguiente en el pool */
+    struct admin_data *next;
+};
+
+//  pool de admin_data
+static const unsigned    max_pool  = 50;  // tamaño máximo
+static unsigned          pool_size = 0;   // tamaño actual
+static struct admin_data *pool     = NULL;
+
+
+/* declaración forward de los handlers de selección de una conexión
+** establecida entre un cliente y el proxy.
+*/
+static void admin_read(struct selector_key *key);
+static void admin_write(struct selector_key *key);
+static void admin_close(struct selector_key *key);
+static const struct fd_handler admin_handler = {
+        .handle_read   = admin_read,
+        .handle_write  = admin_write,
+        .handle_close  = admin_close,
+};
+
+
+static struct admin_data *
+admin_init(int client_fd) {
+    struct admin_data *admin;
+
+    if (pool == NULL) {
+        admin = malloc(sizeof(*admin));
+
+        if (admin == NULL) {
+            goto finally;
+        }
+    } else {
+        admin       = pool;
+        pool        = pool->next;
+        admin->next = 0;
+    }
+
+    memset(admin, 0x00, sizeof(*admin));
+
+    // configura la direccion del cliente (MUA)
+    admin->admin_fd       = client_fd;
+    admin->admin_addr_len = sizeof(admin->admin_addr);
+    admin->temp_pckg 	  = NULL;
+
+    // configura el estado inicial de la maquina de estados
+    admin->session_state = ON_HELLO;
+
+    buffer_init(&admin->read_buffer,  N(admin->raw_buff_a), admin->raw_buff_a);
+    buffer_init(&admin->write_buffer, N(admin->raw_buff_b), admin->raw_buff_b);
+
+finally:
+    return admin;
+}
+
+static void 
+admin_destroy(struct admin_data *data) {
+    if (data != NULL) {
+        if (pool_size < max_pool) {
+            data->next = pool;
+            pool       = data;
+            pool_size++;
+        } else {
+		    free(data);
+        }
+    }
+}
+
+
+void
+psmp_accept_connection(struct selector_key *key) {
+    struct sockaddr_storage  admin_client_addr;
+    socklen_t                admin_client_addr_len = sizeof(admin_client_addr);
+    struct admin_data        *admin_info           = NULL;
+
+    const int admin_client = accept(key->fd, (struct sockaddr*) &admin_client_addr,
+                             &admin_client_addr_len);
+
+    if (admin_client == -1) {
+        goto fail;
+    }
+
+    if (selector_fd_set_nio(admin_client) == -1) {
+        goto fail;
+    }
+
+    admin_info = admin_init(admin_client);
+
+    if (admin_info == NULL) {
+        goto fail;
+    }
+
+    memcpy(&admin_info->admin_addr, &admin_client_addr, admin_client_addr_len);
+
+    admin_info->admin_addr_len = admin_client_addr_len;
+
+    if (SELECTOR_SUCCESS != selector_register(key->s, admin_client, &admin_handler,
+                                             OP_WRITE, admin_info)) {
+        goto fail;
+    }
+
+    return;
+
+fail:
+    if (admin_client != -1)
+        close(admin_client);
+
+    admin_destroy(admin_info);
+}
+
+
+void 
+admin_read(struct selector_key *key) {
+	struct admin_data *data  = ATTACHMENT(key);
+	size_t max_pckg_size = 512;
+	package *pckg = recv_package(key->fd, max_pckg_size);
+	int header_size = OP_CODE_SIZE + STATUS_SIZE + LENGTH_SIZE;
+	unpack(pckg, data->raw_buff_a, header_size);
+
+    if (selector_set_interest(key->s, key->fd, OP_WRITE) != SELECTOR_SUCCESS)
+        admin_close(key);
+}
+
+void 
+admin_write(struct selector_key *key) {
+	struct admin_data *data  = ATTACHMENT(key);
+	package *pckg = handle_package(data->temp_pckg, key);
+	data->temp_pckg = pckg;
+	send_package(key->fd, pckg);
+
+	if (selector_set_interest(key->s, key->fd, OP_READ) != SELECTOR_SUCCESS)
+        admin_close(key);
+}
+
+void 
+admin_close(struct selector_key *key) {
+	free(ATTACHMENT(key)->temp_pckg);
+	free(ATTACHMENT(key));
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
 package *
-handle_package(package *pckg) {
+handle_package(package *pckg, struct selector_key *key) {
     int request_fullfilled = 0;
 
     switch (pckg->op_code) {
@@ -646,7 +829,8 @@ handle_package(package *pckg) {
             break;
 
         case EXIT:
-            request_fullfilled = stop_reading_from_admin();
+            request_fullfilled = close_connection(key->fd);
+            admin_close(key);
             break;
     }
 
@@ -712,6 +896,7 @@ stop_reading_from_admin() {
     return shutdown(fake_proxy_socket, SHUT_RD) != -1;
 }
 
+
 int
 close_connection(int socket_fd) {
     int shut_down = shutdown(socket_fd, SHUT_RDWR);
@@ -720,177 +905,3 @@ close_connection(int socket_fd) {
     return shut_down != -1 && closed != -1;
 }
 */
-
-
-/***************************************
-****************************************
-*******   FOR PROXY USE ONLY   *********
-****************************************
-****************************************/
-
-
-typedef enum {
-	ON_HELLO,
-	ON_AUTH,
-	ON_TRANSACTION,
-	ON_EXIT
-} admin_session_state;
-
-struct admin_data {
-
-    // Info about the admin client
-    struct sockaddr_storage       admin_addr;
-    socklen_t                     admin_addr_len;
-    int                           admin_fd;
-
-    admin_session_state          session_state;
-
-    /** buffers para ser usados read_buffer, write_buffer.*/
-    uint8_t raw_buff_a[2048], raw_buff_b[2048];
-    buffer read_buffer, write_buffer;
-    package *temp_pckg;
-
-    /** siguiente en el pool */
-    struct pop3 *next;
-};
-
-//  pool de admin_data
-static const unsigned    max_pool  = 50;  // tamaño máximo
-static unsigned          pool_size = 0;   // tamaño actual
-static struct admin_data *pool     = NULL;
-
-
-/* declaración forward de los handlers de selección de una conexión
-** establecida entre un cliente y el proxy.
-*/
-static void admin_read(struct selector_key *key);
-static void admin_write(struct selector_key *key);
-static void admin_close(struct selector_key *key);
-static const struct fd_handler admin_handler = {
-        .handle_read   = admin_read,
-        .handle_write  = admin_write,
-        .handle_close  = admin_close,
-};
-
-
-
-void
-psmp_accept_connection(struct selector_key *key) {
-    struct sockaddr_storage  admin_client_addr;
-    socklen_t                admin_client_addr_len = sizeof(admin_client_addr);
-    struct admin_data        *admin_info           = NULL;
-
-    const int admin_client = accept(key->fd, (struct sockaddr*) &admin_client_addr,
-                             &admin_client_addr_len);
-
-    if (admin_client == -1) {
-        goto fail;
-    }
-
-    if (selector_fd_set_nio(admin_client) == -1) {
-        goto fail;
-    }
-
-    admin_info = admin_init(admin_client);
-
-    if (admin_info == NULL) {
-        goto fail;
-    }
-
-    memcpy(&admin_info->admin_addr, &admin_client_addr, admin_client_addr_len);
-
-    admin_info->admin_addr_len = admin_client_addr_len;
-
-    if (SELECTOR_SUCCESS != selector_register(key->s, admin_client, &admin_handler,
-                                             OP_WRITE, state)) {
-        goto fail;
-    }
-
-    return;
-
-fail:
-    if (admin_client != -1)
-        close(admin_client);
-
-    admin_destroy(state);
-}
-
-
-static struct admin_data *
-admin_init(int client_fd) {
-    struct admin_data *admin;
-
-    if (pool == NULL) {
-        admin = malloc(sizeof(*admin));
-
-        if (admin == NULL) {
-            goto finally;
-        }
-    } else {
-        admin       = pool;
-        pool        = pool->next;
-        admin->next = 0;
-    }
-
-    memset(admin, 0x00, sizeof(*admin));
-
-    // configura la direccion del cliente (MUA)
-    admin->admin_fd       = client_fd;
-    admin->admin_addr_len = sizeof(admin->client_addr);
-    admin->temp_pckg 	  = NULL;
-
-    // configura el estado inicial de la maquina de estados
-    admin->session_state = ON_HELLO;
-
-    buffer_init(&admin->read_buffer,  N(admin->raw_buff_a), admin->raw_buff_a);
-    buffer_init(&admin->write_buffer, N(admin->raw_buff_b), admin->raw_buff_b);
-
-    admin->references = 1;
-
-finally:
-    return admin;
-}
-
-
-static void 
-admin_destroy(struct admin_data *data) {
-    if (data != NULL) {
-        if (pool_size < max_pool) {
-            data->next = pool;
-            pool       = data;
-            pool_size++;
-        } else {
-		    free(data);
-        }
-    }
-}
-
-
-void 
-admin_read(struct selector_key *key) {
-	struct admin_data *data  = ATTACHMENT(key);
-	size_t max_pckg_size = 512;
-	package *pckg = recv_package(key->fd, max_pckg_size);
-	int header_size = OP_CODE_SIZE + STATUS_SIZE + LENGTH_SIZE;
-	unpack(pckg, data->raw_buff_a, header_size);
-
-    if (selector_set_interest(key, OP_WRITE) != SELECTOR_SUCCESS)
-        pop3_done(key);
-}
-
-void 
-admin_write(struct selector_key *key) {
-	struct admin_data *data  = ATTACHMENT(key);
-	package *pckg = handle_package(data->temp_pckg);
-	data->temp_pckg = pckg;
-	send_package(key->fd, pckg);
-
-	if (selector_set_interest(key, OP_READ) != SELECTOR_SUCCESS)
-        pop3_done(key);
-}
-
-void 
-admin_close(struct selector_key *key) {
-	free(ATTACHMENT(key)->temp_pckg);
-	free(ATTACHMENT(key));
-}

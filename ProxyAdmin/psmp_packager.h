@@ -20,6 +20,15 @@
 #define EXIT
 */
 
+#define OP_CODE_SIZE 1
+#define STATUS_SIZE 1
+#define LENGTH_SIZE 2
+
+#define OP_CODE 0
+#define STATUS OP_CODE_SIZE
+#define LENGTH (OP_CODE_SIZE + STATUS_SIZE)
+
+
 typedef enum {
 	USER = 0,
 	PASS,
