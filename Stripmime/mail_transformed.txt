@@ -7,23 +7,18 @@ To: Marcos Ariel Atar <aatar@itba.edu.ar>
 Content-Type: multipart/mixed; boundary="00000000000040ef0305799b4238"
 
 --00000000000040ef0305799b4238
-Content-Type: multipart/alternative; boundary="00000000000040ef0005799b4236"
-
---00000000000040ef0005799b4236
-Content-Type: text/plain; charset="UTF-8"
-
-hola
-
---00000000000040ef0005799b4236
-Content-Type: text/html; charset="UTF-8"
-
-<div dir="ltr">hola</div>
-
---00000000000040ef0005799b4236--
---00000000000040ef0305799b4238
 Content-Type: text/plain; charset="UTF-8"
 
 This part was replaced
+
+
+--00000000000040ef0305799b4238
+Content-Type: application/octet-stream; name=stripmime
+Content-Disposition: attachment; filename=stripmime
+Content-Transfer-Encoding: base64
+X-Attachment-Id: f_jnyorm6h0
+Content-ID: <f_jnyorm6h0>
+
 
 --00000000000040ef0305799b4238
 Content-Type: text/plain; charset="UTF-8"

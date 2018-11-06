@@ -1,0 +1,33 @@
+MIME-Version: 1.0
+Date: Thu, 1 Nov 2018 10:49:57 -0300
+Message-ID: <CALjp3T7L5M_yR-gTDp6o_J06zx36Z4LxvD7VmY2c3jX4hQ934g@mail.gmail.com>
+Subject: prueba protos 4
+From: Marcos Ariel Atar <aatar@itba.edu.ar>
+To: Marcos Ariel Atar <aatar@itba.edu.ar>
+Content-Type: multipart/mixed; boundary="000000000000d00d7205799ab1f9"
+
+--000000000000d00d7205799ab1f9
+Content-Type: multipart/alternative; boundary="000000000000d00d6d05799ab1f7"
+
+--000000000000d00d6d05799ab1f7
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: base64
+
+aG9sYSDDqSDDsQ0K
+--000000000000d00d6d05799ab1f7
+Content-Type: text/html; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+<div dir=3D"ltr">hola =C3=A9 =C3=B1</div>
+
+--000000000000d00d6d05799ab1f7--
+--000000000000d00d7205799ab1f9
+Content-Type: image/png; name="Screenshot from 2018-10-25 11-41-52.png"
+Content-Disposition: attachment; filename="Screenshot from 2018-10-25 11-41-52.png"
+Content-Transfer-Encoding: base64
+X-Attachment-Id: f_jnyncwth0
+Content-ID: <f_jnyncwth0>
+
+
+--000000000000d00d7205799ab1f9--
+.

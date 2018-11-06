@@ -33,7 +33,7 @@ int boundaries_length = 0;
 int main(int argc, char const *argv[]) {
 
     //char *filter_medias = getenv(FILTER_MEDIAS);
-    char *filter_medias = "application/*,image/png";
+    char *filter_medias = "application/octet,image/*,text/html,multipart/alternative";
 
     if (filter_medias == NULL) {
         fprintf(stderr, "-ERR No filter medias specified.\r\n");
