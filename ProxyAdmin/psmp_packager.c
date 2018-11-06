@@ -40,8 +40,8 @@ create_package(uint8_t op_code, uint8_t status, uint16_t length,
     package *pckg = malloc(sizeof(package));
 
     pckg->op_code = op_code;
-    pckg->status = status;
-    pckg->length = length;
+    pckg->status  = status;
+    pckg->length  = length;
 
     if (length > 0) {
         pckg->content = calloc(length, sizeof(uint8_t));
@@ -84,7 +84,7 @@ recv_package(int at_socket_fd, int max_content_size) {
     int header_size = OP_CODE_SIZE + STATUS_SIZE + LENGTH_SIZE;
     int buffer_size = header_size + max_content_size;
     uint8_t *buffer = calloc(buffer_size, sizeof(uint8_t));
-    package *pckg = NULL;
+    package *pckg   = NULL;
 
     int bytes_rcvd = sctp_recvmsg(at_socket_fd, (void *) buffer, 
         (size_t) buffer_size, (struct sockaddr *) NULL, NULL, NULL, NULL);

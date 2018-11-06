@@ -16,7 +16,7 @@
 #include "input_data.h"
 #include "selector.h"
 #include "pop3.h"
-// #include "management.h"
+#include "admin.h"
 // #include "metrics.h"
 
 
@@ -89,13 +89,15 @@ int main (int argc, char ** argv) {
                     .tv_nsec = 0,
             },
     };
-    if(0 != selector_init(&conf)) {
+
+    if (0 != selector_init(&conf)) {
         err_msg = "initializing selector";
         goto finally;
     }
 
     selector = selector_new(1024);
-    if(selector == NULL) {
+
+    if (selector == NULL) {
         err_msg = "unable to create selector";
         goto finally;
     }
@@ -108,8 +110,7 @@ int main (int argc, char ** argv) {
 
     // proxy server management protocol
     const struct fd_handler psmp_handler = {
-            // .handle_read       = &psmp_accept_connection,
-            .handle_read       = NULL,
+            .handle_read       = &psmp_accept_connection,
             .handle_write      = NULL,
             .handle_close      = NULL,
     };
@@ -125,16 +126,17 @@ int main (int argc, char ** argv) {
         goto finally;
     }
 
-    for(;;) {
+    for (;;) {
         err_msg  = NULL;
         ss  = selector_select(selector);
-        if(ss != SELECTOR_SUCCESS) {
+        
+        if (ss != SELECTOR_SUCCESS) {
             err_msg = "serving";
             break;
         }
     }
 
-    if(err_msg == NULL) {
+    if (err_msg == NULL) {
         err_msg = "closing";
     }
 

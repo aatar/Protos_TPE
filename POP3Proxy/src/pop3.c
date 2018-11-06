@@ -207,7 +207,8 @@ static const struct state_definition * pop3_describe_states(void);
 
 void pop3_session_init(struct pop3_session *s, bool pipeline);
 
-static struct pop3_data * pop3_init(int client_fd) {
+static struct pop3_data * 
+pop3_init(int client_fd) {
     struct pop3_data * pop3;
 
     if(pool == NULL) {
@@ -254,11 +255,13 @@ finally:
 
 // void pop3_destroy(struct pop3_data *s);
 
-static void pop3_destroy_(struct pop3_data *s) {
+static void 
+pop3_destroy_(struct pop3_data *s) {
     if(s->origin_resolution != NULL) {
         freeaddrinfo(s->origin_resolution);
         s->origin_resolution = 0;
     }
+
     free(s);
 }
 
@@ -266,8 +269,9 @@ static void pop3_destroy_(struct pop3_data *s) {
  * destruye un  `struct pop3_data', tiene en cuenta las referencias
  * y el pool de objetos.
  */
-static void pop3_destroy(struct pop3_data *s) {
-    if(s == NULL) {
+static void 
+pop3_destroy(struct pop3_data *s) {
+    if (s == NULL) {
         // nada para hacer
     } else if(s->references == 1) {
         if(s != NULL) {
@@ -284,7 +288,8 @@ static void pop3_destroy(struct pop3_data *s) {
     }
 }
 
-void pop3_pool_destroy(void) {
+void 
+pop3_pool_destroy(void) {
     struct pop3_data *next, *s;
     for(s = pool; s != NULL ; s = next) {
         next = s->next;
@@ -298,8 +303,8 @@ void pop3_pool_destroy(void) {
 #define ATTACHMENT(key) ( (struct pop3_data *)(key)->data)
 
 /* declaración forward de los handlers de selección de una conexión
- * establecida entre un cliente y el proxy.
- */
+** establecida entre un cliente y el proxy.
+*/
 static void pop3_read(struct selector_key *key);
 static void pop3_write(struct selector_key *key);
 static void pop3_block(struct selector_key *key);
@@ -311,11 +316,12 @@ static const struct fd_handler pop3_handler = {
         .handle_block  = pop3_block,
 };
 
-void pop3_passive_accept(struct selector_key *key) {
+void
+pop3_passive_accept(struct selector_key *key) {
 
     struct sockaddr_storage  mua_client_addr;
     socklen_t                mua_client_addr_len = sizeof(mua_client_addr);
-    struct pop3_data                             *state = NULL;
+    struct pop3_data         *state              = NULL;
 
     // en esta instancia llego por el select asique el accept va a retornar sin bloquear
     const int mua_client = accept(key->fd, (struct sockaddr*) &mua_client_addr,
@@ -324,18 +330,18 @@ void pop3_passive_accept(struct selector_key *key) {
     // met->concurrent_connections++;
     // met->historical_access++;
 
-    if(mua_client == -1) {
+    if (mua_client == -1) {
         goto fail;
     } 
 
     // configura el socket para que sea no bloqueante
-    if(selector_fd_set_nio(mua_client) == -1) {
+    if (selector_fd_set_nio(mua_client) == -1) {
         goto fail;
     }
 
     state = pop3_init(mua_client);
 
-    if(state == NULL) {
+    if (state == NULL) {
         goto fail;
     }
 
@@ -343,20 +349,19 @@ void pop3_passive_accept(struct selector_key *key) {
 
     state->client_addr_len = mua_client_addr_len;
 
-    if(SELECTOR_SUCCESS != selector_register(key->s, mua_client, &pop3_handler,
+    if (SELECTOR_SUCCESS != selector_register(key->s, mua_client, &pop3_handler,
                                              OP_WRITE, state)) {
         goto fail;
     }
-    return ;
+
+    return;
 
 fail:
-    if(mua_client != -1) {
+    if (mua_client != -1) {
         close(mua_client);
     }
     pop3_destroy(state);
 }
-
-
 
 
 /////////////////////////////////////////////////////////////////////////////
@@ -648,7 +653,7 @@ static unsigned hello_write(struct selector_key *key) {
 
 void
 capa_init(const unsigned state, struct selector_key *key) {
-    struct request_st * d      = &ATTACHMENT(key)->orig.request;
+    struct request_st * d       = &ATTACHMENT(key)->orig.request;
 
     d->rb                       = &ATTACHMENT(key)->read_buffer;
     d->wb                       = &ATTACHMENT(key)->write_buffer;

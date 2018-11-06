@@ -1,3 +1,4 @@
+/*
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -117,3 +118,4 @@ int main(int argc, char const *argv[]) {
 
 	return 0;
 }
+*/
