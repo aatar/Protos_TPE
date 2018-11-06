@@ -10,16 +10,33 @@
 #define MAX_RESPONSE_SIZE   512
 #define DESCRIPTION_SIZE    (MAX_RESPONSE_SIZE - STATUS_SIZE - 2)
 
+ 
+/** eventos del parser multilinea pop3 */
+enum pop3_multi_type {
+    /** N bytes nuevos*/
+    POP3_MULTI_BYTE,
+    /** hay que esperar, no podemos decidir */
+    POP3_MULTI_WAIT,
+    /** la respuesta está completa */
+    POP3_MULTI_FIN,
+};
+
+/** la definición del parser */
+const struct parser_definition * pop3_multi_parser(void);
+
+const char * pop3_multi_event(enum pop3_multi_type type);
+
+
 enum response_state {
-    response_status_indicator,
-    response_description,
-    response_newline,
-    response_mail,
-    response_list,
-    response_capa,
-    response_multiline,
-    response_done,
-    response_error,
+    res_status_indicator,
+    res_description,
+    res_newline,
+    res_mail,
+    res_list,
+    res_capa,
+    res_multiline,
+    res_done,
+    res_error,
 };
 
 struct response_parser {
@@ -29,8 +46,7 @@ struct response_parser {
     uint8_t               i, j, count;
 
     char                  status_buffer[STATUS_SIZE];
-    char                  description_buffer[DESCRIPTION_SIZE];     // unused
-
+    char                  description_buffer[DESCRIPTION_SIZE];   
     bool                  first_line_done;
     struct parser         *pop3_multi_parser;
 
@@ -40,13 +56,13 @@ struct response_parser {
 
 
 enum request_state {
-    request_cmd,
-    request_param,
-    request_newline,
-    request_done,
-    request_error,
-    request_error_cmd_too_long,
-    request_error_param_too_long,
+    req_cmd,
+    req_param,
+    req_newline,
+    req_done,
+    req_error,
+    req_error_long_cmd,
+    req_error_long_param,
 };
 
 #define CMD_SIZE    4
@@ -67,15 +83,10 @@ enum pop3_cmd_id {
 
     error = -1,
 
-    /* valid in the AUTHORIZATION state */
-    user, pass,
-    apop,
+    user, pass, apop,
 
-    /* valid in the TRANSACTION state */
-    stat, list, retr, dele, noop, rset,
-    top, uidl,
+    stat, list, retr, dele, noop, rset, top, uidl,
 
-    /* other */
     quit, capa,
 };
 
@@ -92,7 +103,7 @@ struct pop3_request {
 };
 
 
-const struct pop3_request_cmd * get_cmd(const char *cmd);
+const struct pop3_request_cmd * get_command(const char *cmd);
 
 struct pop3_request * new_request(const struct pop3_request_cmd * cmd, char * args);
 

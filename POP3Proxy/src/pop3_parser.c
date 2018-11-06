@@ -90,7 +90,7 @@ static bool strcmpi(const char * str1, const char * str2) {
 
 #define N(x) (sizeof(x)/sizeof((x)[0]))
 
-const struct pop3_request_cmd * get_cmd(const char *cmd) {
+const struct pop3_request_cmd * get_command(const char *cmd) {
 
     for (unsigned i = 0; i < N(commands); i++) {
         if (strcmpi(cmd, commands[i].name)) {
@@ -186,18 +186,25 @@ extern enum response_state response_parser_feed (struct response_parser* p, cons
     return p->state = next;
 }
 
-extern enum response_state response_consume(buffer *b, buffer *bb, struct response_parser *p, bool *errored) {
+extern enum response_state response_consume(buffer *rb, buffer *Wb, struct response_parser *p, bool *errored) {
     enum response_state st = p->state;
     if (p->state == response_done)
         return st;
-    while(buffer_can_read(b)) {
-        const uint8_t c = buffer_read(b);
+    while(buffer_can_read(rb)) {
+        const uint8_t c = buffer_read(rb);
         st = response_parser_feed(p, c);
-        buffer_write(bb, c);
+        buffer_write(wb, c);
         if(response_is_done(st, errored) || p->first_line_done) {   // si se termino la respuesta o se termino de leer la primera linea
             break;
         }
     }
+    return st;
+}
+
+extern enum response_state response_consume_first_line(buffer *rb, buffer *Wb, struct response_parser *p, bool *errored) {
+    enum response_state st = response_consume(rb, Wb, p, errored);
+    p->.first_line_done = false;
+    st = response_consume(rb, Wb, p, errored);
     return st;
 }
 
@@ -217,7 +224,7 @@ extern enum response_state response_consume(buffer *b, buffer *bb, struct respon
 //     char * capabilities = d->response_parser.capa_response;
 //     char * needle = "PIPELINING";
 
-//     struct pop3 *p = ATTACHMENT(key);
+//     struct pop3_data *p = ATTACHMENT(key);
 
 //     if (strstr(capabilities, needle) != NULL) {
 //         p->session.pipelining = true;
